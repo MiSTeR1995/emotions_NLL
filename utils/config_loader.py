@@ -32,13 +32,13 @@ class ConfigLoader:
 
         # 🔹 Параметры сохранения аудио
         self.save_processed_audio = self.config.get("audio_saving", {}).get("save_processed_audio", False)
-        self.audio_output_dir = self.config.get("audio_saving", {}).get("output_dir", "{base_dir}/output_wavs").format(base_dir=self.base_dir)
+        self.audio_output_dir = self.config.get("audio_saving", {}).get("audio_output_dir", "{base_dir}/output_wavs").format(base_dir=self.base_dir)
 
         # 🔹 Текстовые параметры
         self.text_source = self.config.get("text", {}).get("source", "whisper")  # "csv" или "whisper"
         self.text_column = self.config.get("text", {}).get("text_column", "text")  # Название колонки с текстом
-        self.whisper_model = self.config.get("text", {}).get("model", "small")  # Whisper model
-
+        self.whisper_model = self.config.get("text", {}).get("whisper_model", "small")  # Whisper model
+        self.max_text_tokens = self.config.get("text", {}).get("max_tokens", 15)  # Ограничение длины текста (по словам)
 
         # 🔹 Логируем конфиг только в главном процессе
         if __name__ == "__main__":
@@ -56,13 +56,13 @@ class ConfigLoader:
         print(f"   Audio: Sample Rate = {self.sample_rate}, Length = {self.wav_length}s")
 
         print(f"   Text Source: {self.text_source}, Text Column: {self.text_column}")
+        print(f"   Whisper Model: {self.whisper_model}, Max Tokens: {self.max_text_tokens}")
 
         # 🔹 Добавляем инфу про сохранение аудио
         if self.save_processed_audio:
             print(f"   Audio Saving: ✅ Включено, файлы сохраняются в `{self.audio_output_dir}`")
         else:
             print(f"   Audio Saving: ❌ Выключено")
-
 
     def update_config(self, **kwargs):
         """Позволяет изменять параметры на лету."""

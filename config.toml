@@ -20,20 +20,15 @@ shuffle = true
 # 🔹 Аудио параметры
 [audio]
 sample_rate = 16000
-wav_length = 10
+wav_length = 2
 
 [audio_saving]
-save_processed_audio = true  # true - сохранять обрезанные файлы, false - не сохранять
+save_processed_audio = false  # true - сохранять обрезанные файлы, false - не сохранять
 audio_output_dir = "{base_dir}\\output_wavs"   # Папка для сохранения обработанных файлов
 
 # 🔹 Обработка текста
 [text]
-source = "whisper"  # "csv" или "whisper"
+source = "csv"  # Для dev/test можно использовать "csv", train - всегда whisper
 text_column = "text"  # Колонка с текстом в CSV (если source = "csv")
-model = "tiny"  # Whisper model: "tiny", "base", "small", "medium", "large"
-
-
-# # 🔹 Видео параметры
-# [video]
-# frame_size = [224, 224]
-# num_frames = 16
+whisper_model = "tiny"  # Whisper model: "tiny", "base", "small", "medium", "large"
+max_tokens = 5  # Максимальное количество слов в транскрипции
