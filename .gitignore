@@ -176,3 +176,5 @@ notebooks/requirements.txt
 project_structure.txt
 fonts/
 db/
+logs/
+.old/

@@ -1,85 +1,109 @@
+# utils/config_loader.py
+
 import os
 import toml
+import logging
 
 class ConfigLoader:
-    """Класс для загрузки и обработки конфигурации из `config.toml`."""
+    """
+    Класс для загрузки и обработки конфигурации из `config.toml`.
+
+    Поддерживает следующие основные поля:
+    - split: "train", "dev", "test"
+    - base_dir, csv_path, wav_dir, video_dir
+    - emotion_columns, modalities
+    - Параметры dataloader (batch_size, num_workers, shuffle)
+    - Параметры аудио (sample_rate, wav_length)
+    - Whisper-настройки (whisper_model, max_tokens, device и т.д.)
+    - Параметры для тренировки (random_seed)
+    """
 
     def __init__(self, config_path="config.toml"):
+        """
+        Инициализирует загрузку из TOML-файла.
+        """
         if not os.path.exists(config_path):
-            raise FileNotFoundError(f"⚠️ Ошибка: Файл конфигурации `{config_path}` не найден!")
+            raise FileNotFoundError(f"Файл конфигурации `{config_path}` не найден!")
 
         self.config = toml.load(config_path)
 
-        # 🔹 Основные пути
-        self.split = self.config.get("split", "dev")  # "train", "dev", "test"
-        self.base_dir = self.config.get("base_dir", "E:/MELD")  # Корневой каталог данных
-        self.csv_path = self.config.get("csv_path", "{base_dir}/MELD.Raw/meld_{split}_labels.csv").format(base_dir=self.base_dir, split=self.split)
-        self.wav_dir = self.config.get("wav_dir", "{base_dir}/wavs/{split}").format(base_dir=self.base_dir, split=self.split)
-        self.video_dir = self.config.get("video_dir", "{base_dir}/MELD.Raw/{split}_splits").format(base_dir=self.base_dir, split=self.split)
+        # ---------------------------
+        # Общие параметры
+        # ---------------------------
+        self.split = self.config.get("split", "train")
+        self.base_dir = self.config.get("base_dir", "E:/MELD")
 
-        # 🔹 Датасет
-        self.modalities = self.config.get("modalities", ["audio"])  # Какие модальности использовать
-        self.emotion_columns = self.config.get("emotion_columns", ["neutral", "happy", "sad", "anger", "surprise", "disgust", "fear"])
+        # ---------------------------
+        # Пути к данным
+        # ---------------------------
+        self.csv_path = self.config.get("csv_path", "{base_dir}/MELD.Raw/meld_{split}_labels.csv") \
+            .format(base_dir=self.base_dir, split=self.split)
+        self.wav_dir = self.config.get("wav_dir", "{base_dir}/wavs/{split}") \
+            .format(base_dir=self.base_dir, split=self.split)
+        self.video_dir = self.config.get("video_dir", "{base_dir}/MELD.Raw/{split}_splits") \
+            .format(base_dir=self.base_dir, split=self.split)
 
-        # 🔹 DataLoader
-        self.batch_size = self.config.get("dataloader", {}).get("batch_size", 1)
-        self.num_workers = self.config.get("dataloader", {}).get("num_workers", 1)
-        self.shuffle = self.config.get("dataloader", {}).get("shuffle", True)
+        # ---------------------------
+        # Эмоции, модальности
+        # ---------------------------
+        self.modalities = self.config.get("modalities", ["audio"])
+        self.emotion_columns = self.config.get("emotion_columns",
+                                               ["neutral","happy","sad","anger","surprise","disgust","fear"])
 
-        # 🔹 Аудио параметры
-        self.sample_rate = self.config.get("audio", {}).get("sample_rate", 16000)
-        self.wav_length = self.config.get("audio", {}).get("wav_length", 2)
+        # ---------------------------
+        # Параметры DataLoader
+        # ---------------------------
+        dataloader_cfg = self.config.get("dataloader", {})
+        self.batch_size = dataloader_cfg.get("batch_size", 1)
+        self.num_workers = dataloader_cfg.get("num_workers", 0)
+        self.shuffle = dataloader_cfg.get("shuffle", True)
 
-        # 🔹 Параметры сохранения аудио
-        self.save_processed_audio = self.config.get("audio_saving", {}).get("save_processed_audio", False)
-        self.audio_output_dir = self.config.get("audio_saving", {}).get("audio_output_dir", "{base_dir}/output_wavs").format(base_dir=self.base_dir)
+        # ---------------------------
+        # Аудио
+        # ---------------------------
+        audio_cfg = self.config.get("audio", {})
+        self.sample_rate = audio_cfg.get("sample_rate", 16000)
+        self.wav_length = audio_cfg.get("wav_length", 2)  # в секундах
 
-        # 🔹 Текстовые параметры
-        self.text_source = self.config.get("text", {}).get("source", "whisper")  # "csv" или "whisper"
-        self.text_column = self.config.get("text", {}).get("text_column", "text")  # Название колонки с текстом
-        self.whisper_model = self.config.get("text", {}).get("whisper_model", "small")  # Whisper model
-        self.max_text_tokens = self.config.get("text", {}).get("max_tokens", 15)  # Ограничение длины текста (по словам)
+        # ---------------------------
+        # Whisper / Текст
+        # ---------------------------
+        text_cfg = self.config.get("text", {})
+        self.text_source = text_cfg.get("source", "csv")
+        self.text_column = text_cfg.get("text_column", "text")
+        self.whisper_model = text_cfg.get("whisper_model", "tiny")
+        self.max_text_tokens = text_cfg.get("max_tokens", 15)
+        self.whisper_device = text_cfg.get("whisper_device", "cuda")
+        self.use_whisper_for_nontrain_if_no_text = text_cfg.get("use_whisper_for_nontrain_if_no_text", True)
 
-        # 🔹 Логируем конфиг только в главном процессе
+        # ---------------------------
+        # Параметры для тренировки
+        # ---------------------------
+        train_cfg = self.config.get("train", {})
+        self.random_seed = train_cfg.get("random_seed", None)
+        self.subset_size = train_cfg.get("subset_size", 0)
+
         if __name__ == "__main__":
             self.log_config()
 
     def log_config(self):
-        """Выводит текущую конфигурацию в консоль (только в главном процессе)."""
-        print("\n🔹 Конфигурация загружена:")
-        print(f"   Split: {self.split}")
-        print(f"   CSV Path: {self.csv_path}")
-        print(f"   WAV Dir: {self.wav_dir}")
-        print(f"   Video Dir: {self.video_dir}")
-        print(f"   Modalities: {self.modalities}")
-        print(f"   Batch Size: {self.batch_size}, Num Workers: {self.num_workers}, Shuffle: {self.shuffle}")
-        print(f"   Audio: Sample Rate = {self.sample_rate}, Length = {self.wav_length}s")
-
-        print(f"   Text Source: {self.text_source}, Text Column: {self.text_column}")
-        print(f"   Whisper Model: {self.whisper_model}, Max Tokens: {self.max_text_tokens}")
-
-        # 🔹 Добавляем инфу про сохранение аудио
-        if self.save_processed_audio:
-            print(f"   Audio Saving: ✅ Включено, файлы сохраняются в `{self.audio_output_dir}`")
-        else:
-            print(f"   Audio Saving: ❌ Выключено")
-
-    def update_config(self, **kwargs):
-        """Позволяет изменять параметры на лету."""
-        for key, value in kwargs.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-                print(f"✅ Параметр `{key}` обновлён: {value}")
-            else:
-                print(f"⚠️ Ошибка: Параметр `{key}` не найден в конфиге!")
+        """
+        Выводит конфигурацию в лог (уровень INFO).
+        """
+        logging.info("=== CONFIGURATION ===")
+        logging.info(f"Split: {self.split}")
+        logging.info(f"Base Dir: {self.base_dir}")
+        logging.info(f"CSV Path: {self.csv_path}")
+        logging.info(f"WAV Dir: {self.wav_dir}")
+        logging.info(f"Emotion columns: {self.emotion_columns}")
+        logging.info(f"Sample Rate={self.sample_rate}, Wav Length={self.wav_length}s")
+        logging.info(f"Whisper Model={self.whisper_model}, Device={self.whisper_device}, MaxTokens={self.max_text_tokens}")
+        logging.info(f"use_whisper_for_nontrain_if_no_text={self.use_whisper_for_nontrain_if_no_text}")
+        logging.info(f"DataLoader: batch_size={self.batch_size}, num_workers={self.num_workers}, shuffle={self.shuffle}")
+        logging.info(f"Random Seed={self.random_seed}")
 
     def show_config(self):
-        """Выводит текущую конфигурацию (можно вызывать вручную)."""
+        """
+        Вызывается вручную, чтобы логировать текущие настройки.
+        """
         self.log_config()
-
-# 🔹 Создаём глобальный объект конфигурации
-config = ConfigLoader()
-
-# Если запускаем файл напрямую, выводим конфиг
-if __name__ == "__main__":
-    config.show_config()

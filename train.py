@@ -1,58 +1,57 @@
+# train.py
+
+import logging
+import os
+import datetime
 import torch
+import random
 from torch.utils.data import DataLoader
+
+from utils.logger_setup import setup_logger
+from utils.config_loader import ConfigLoader
 from data_loading.dataset_multimodal import DatasetMultiModal
-from processing.audio_processing import AudioProcessor
-from utils.config_loader import config
 
-def custom_collate_fn(batch):
-    """Удаляет `None` из батча и пропускает пустые батчи."""
-    batch = [b for b in batch if b is not None]
+def main():
+    # Создаём папку для логов (если не существует)
+    os.makedirs("logs", exist_ok=True)
 
-    if batch:
-        # Теперь b['audio'] будет тензором, а не кортежем
-        audio_batch = torch.stack([b['audio'] for b in batch])
-        batch_dict = {
-            "audio": audio_batch,
-            "text": [b['text'] for b in batch],
-            "label": torch.stack([b['label'] for b in batch])
-        }
-        return batch_dict
+    # Генерируем имя файла с датой/временем
+    datestr = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    log_file = os.path.join("logs", f"train_log_{datestr}.txt")
 
-    return None
+    # Инициализируем логгер: цветные логи в консоль + запись в файл
+    setup_logger(logging.DEBUG, log_file=log_file)
+    logging.info("🚀 === Запуск on-the-fly тренировки ===")
 
-
-
-if __name__ == "__main__":
-    print("🚀 Запуск тренировки с конфигурацией:")
+    # Загружаем конфиг
+    config = ConfigLoader("config.toml")
     config.show_config()
 
-    # 🔹 Создаём датасет (без препроцессора, чтобы сначала создать `audio_class_map`, только если split == "train")
+    # Фиксируем сид, если указан в конфиге
+    if config.random_seed is not None:
+        random.seed(config.random_seed)
+        torch.manual_seed(config.random_seed)
+        logging.info(f"🔒 Фиксируем random seed: {config.random_seed}")
+    else:
+        logging.info("🔓 random seed НЕ фиксирован (None).")
+
+    # Создаём датасет
     dataset = DatasetMultiModal(
         csv_path=config.csv_path,
         wav_dir=config.wav_dir,
         emotion_columns=config.emotion_columns,
         split=config.split,
-        modalities=config.modalities,
-        text_source=config.text_source,
-        text_column=config.text_column
-    )
-
-    # 🔹 Если `train`, создаём аудио-препроцессор с `audio_class_map`
-    audio_processor = AudioProcessor(
         sample_rate=config.sample_rate,
         wav_length=config.wav_length,
-        save_processed_audio=config.save_processed_audio,
-        output_dir=config.audio_output_dir,
-        split=config.split,
-        audio_class_map=dataset.audio_class_map,
         whisper_model=config.whisper_model,
-        max_text_tokens=config.max_text_tokens  # <-- Новое ограничение для текста
+        max_text_tokens=config.max_text_tokens,
+        text_column=config.text_column,
+        use_whisper_for_nontrain_if_no_text=config.use_whisper_for_nontrain_if_no_text,
+        whisper_device=config.whisper_device,
+        subset_size=config.subset_size
     )
 
-    # 🔹 Передаём процессор в датасет
-    dataset.audio_processor = audio_processor
-
-    # 🔹 Создаём DataLoader
+    # Создаём DataLoader
     dataloader = DataLoader(
         dataset,
         batch_size=config.batch_size,
@@ -61,24 +60,41 @@ if __name__ == "__main__":
         collate_fn=custom_collate_fn
     )
 
-    print("\n🚀 Начинаем загрузку данных из DataLoader...")
+    # Пример цикла обучения
+    for epoch in range(2):
+        logging.info(f"=== Эпоха {epoch} ===")
+        for i, batch in enumerate(dataloader):
+            if batch is None:
+                continue
 
-    for batch in dataloader:
-        if batch is None:
-            print("⚠️ Пропущен пустой батч")
-            continue
+            audio = batch["audio"]
+            labels = batch["label"]
+            texts = batch["text"]
 
-        print(f"\n🔹 Batch загружен:")
-        print(f"   - Batch Audio shape: {batch['audio'].shape if batch['audio'] is not None else 'None'}")
-        print(f"   - Batch Emotion vector shape: {batch['label'].shape}")
+            logging.info(f"[Epoch={epoch} Batch={i}] audio_shape={audio.shape}, label_shape={labels.shape}")
+            if texts:
+                logging.info(f"Пример текста[0]: {texts[0]}")
 
-        # 🔹 Выводим one-hot эмоции
-        for i, emotions in enumerate(batch['label']):
-            print(f"🎭 Эмоция для примера {i}: {emotions.tolist()}")
+    logging.info("✅ Тренировка завершена.")
 
-        # 🔹 Выводим текстовые транскрипции
-        for i, text in enumerate(batch['text']):
-            text_display = text if text.strip() else "⚠️ [Пустая транскрипция]"
-            print(f"📝 Текст для примера {i}: {text_display}")
+def custom_collate_fn(batch):
+    batch = [x for x in batch if x is not None]
+    if not batch:
+        return None
 
-        break  # Только один батч для теста
+    audios = [b["audio"] for b in batch]
+    audio_tensor = torch.stack(audios)
+
+    labels = [b["label"] for b in batch]
+    label_tensor = torch.stack(labels)
+
+    texts = [b["text"] for b in batch]
+
+    return {
+        "audio": audio_tensor,
+        "label": label_tensor,
+        "text": texts
+    }
+
+if __name__ == "__main__":
+    main()
