@@ -57,4 +57,4 @@ use_whisper_for_nontrain_if_no_text = true
 [train]
 # Если указать random_seed, мы фиксируем seed => воспроизводимые результаты
 random_seed = 42
-subset_size = 5 # Если subset_size = 0 или subset_size не указан, значит используем весь датасет без ограничений.
+# subset_size = 50 # Если subset_size = 0 или subset_size не указан, значит используем весь датасет без ограничений.

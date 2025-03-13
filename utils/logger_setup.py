@@ -5,39 +5,37 @@ from colorlog import ColoredFormatter
 
 def setup_logger(level=logging.INFO, log_file=None):
     """
-    Настраивает корневой логгер Python:
-    1) Раскрашенные логи в консоль (colorlog)
-    2) (опционально) запись в файл (log_file)
+    Настраивает корневой логгер для вывода цветных логов в консоль и
+    (опционально) записи в файл.
 
-    :param level: logging.INFO, logging.DEBUG и т.д.
-    :param log_file: путь к файлу лога (str) или None, если файл не нужен
+    :param level: Уровень логирования (например, logging.DEBUG)
+    :param log_file: Путь к файлу лога (если не None, логи будут писаться в этот файл)
     """
     logger = logging.getLogger()
     if logger.hasHandlers():
         logger.handlers.clear()
 
-    # Хендлер для консоли (цветной вывод)
+    # Консольный хендлер с colorlog
     console_handler = logging.StreamHandler()
     log_format = (
-        "%(log_color)s%(asctime)s [%(levelname)s]%(reset)s "
-        "%(blue)s%(message)s"
+        "%(log_color)s%(asctime)s [%(levelname)s]%(reset)s %(blue)s%(message)s"
     )
     console_formatter = ColoredFormatter(
         log_format,
         datefmt="%Y-%m-%d %H:%M:%S",
         reset=True,
         log_colors={
-            "DEBUG":    "cyan",
-            "INFO":     "green",
-            "WARNING":  "yellow",
-            "ERROR":    "red",
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
             "CRITICAL": "bold_red"
         }
     )
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    # Если указали log_file, добавляем FileHandler
+    # Если указан log_file, добавляем файловый хендлер
     if log_file is not None:
         file_handler = logging.FileHandler(log_file, mode="w", encoding="utf-8")
         file_format = "%(asctime)s [%(levelname)s] %(message)s"
