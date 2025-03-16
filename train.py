@@ -79,7 +79,7 @@ def main():
     )
 
     # Пример цикла тренировки (2 эпохи)
-    for epoch in range(1):
+    for epoch in range(2):
         logging.info(f"=== Эпоха {epoch} ===")
         for i, batch in enumerate(dataloader):
             if batch is None:

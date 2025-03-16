@@ -1,7 +1,7 @@
 # ---------------------------
 # Основные настройки проекта
 # ---------------------------
-split = "train"               # "train", "dev", "test"
+split = "dev"               # "train", "dev", "test"
 base_dir = "E:\\MELD"         # Корневая директория, где лежат данные
 
 # Пути к данным (используются в config_loader.py)
@@ -28,7 +28,7 @@ shuffle = true
 # ---------------------------
 [audio]
 sample_rate = 16000           # Целевая частота дискретизации
-wav_length = 10                # Целевая длина (в секундах) для аудио
+wav_length = 2                # Целевая длина (в секундах) для аудио
 
 [audio_saving]
 save_processed_audio = false
@@ -42,7 +42,7 @@ audio_output_dir = "{base_dir}\\output_wavs"
 # (поле text_column). Если нет - тогда Whisper (если нужно).
 source = "csv"
 text_column = "text"
-whisper_model = "tiny"
+whisper_model = "base"
 max_text_tokens = 25
 
 # Указываем, где запускать Whisper: "cuda" (GPU) или "cpu"
@@ -56,5 +56,5 @@ use_whisper_for_nontrain_if_no_text = true
 # ---------------------------
 [train]
 # Если указать random_seed, мы фиксируем seed => воспроизводимые результаты
-random_seed = 42
-# subset_size = 50 # Если subset_size = 0 или subset_size не указан, значит используем весь датасет без ограничений.
+random_seed = 42 #  <=0 - рандомная выборка будет каждый раз
+subset_size = 50 # Если subset_size = 0 или subset_size не указан, значит используем весь датасет без ограничений.

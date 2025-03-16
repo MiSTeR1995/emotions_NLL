@@ -37,7 +37,7 @@ class DatasetMultiModal(Dataset):
         sample_rate=16000,
         wav_length=2,
         whisper_model="tiny",
-        max_text_tokens=15,  # данный параметр больше не используется – полный текст от Whisper
+        max_text_tokens=15,  # данный параметр больше не используется
         text_column="text",
         use_whisper_for_nontrain_if_no_text=True,
         whisper_device="cuda",
@@ -149,6 +149,8 @@ class DatasetMultiModal(Dataset):
         logging.debug(f"Исходная длина {os.path.basename(audio_path)}: {orig_len/sr:.2f} сек")
 
         was_merged = False
+        merged_texts = [csv_text]  # Хранит текст первого аудио + тексты добавленных
+
         # Шаг 2. Для train, если аудио короче target_samples, пытаемся добавить дополнительные файлы (chain merge)
         if self.split == "train" and orig_len < self.target_samples:
             current_length = orig_len
@@ -166,8 +168,14 @@ class DatasetMultiModal(Dataset):
                 logging.debug(f"Склейка: добавляем {os.path.basename(candidate)} (необходимых сэмплов: {needed})")
                 waveform = torch.cat((waveform, add_wf), dim=1)
                 current_length = waveform.shape[1]
-            if current_length > orig_len:
                 was_merged = True
+
+                # Получаем текст второго файла (если он есть в CSV)
+                add_csv_text = next((row["csv_text"] for row in self.rows if row["audio_path"] == candidate), "")
+                merged_texts.append(add_csv_text)
+
+                logging.debug(f"📜 Текст первого файла: {csv_text}")
+                logging.debug(f"📜 Текст добавленного файла: {add_csv_text}")
 
         # Шаг 3. Если итоговая длина меньше target_samples, выполняем паддинг нулями
         curr_len = waveform.shape[1]
@@ -185,8 +193,10 @@ class DatasetMultiModal(Dataset):
         # Если не было и CSV-текст непустой, используем CSV-текст;
         # Иначе, для train (или по условию для dev/test) вызываем Whisper.
         if was_merged:
-            logging.debug("Текст: аудио было merged – вызываем Whisper.")
+            logging.debug("📝 Текст: аудио было merged – вызываем Whisper.")
             text_final = self.run_whisper(waveform)
+            logging.debug(f"🆕 Whisper предсказал: {text_final}")
+
         else:
             if csv_text.strip():
                 logging.debug("Текст: используем CSV-текст (не пуст).")
@@ -247,9 +257,10 @@ class DatasetMultiModal(Dataset):
         if not valid:
             return None  # Нет подходящих файлов
 
-        # Выбираем файл с минимально достаточной длиной
-        valid.sort(key=lambda x: x[0])
-        return valid[0][1]
+        # Перемешиваем кандидатов (если seed зафиксирован, порядок будет одинаковым)
+        random.shuffle(valid)
+
+        return random.choice(valid)[1]
 
 
     def run_whisper(self, waveform):
