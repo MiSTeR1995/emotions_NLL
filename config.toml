@@ -1,7 +1,7 @@
 # ---------------------------
 # Основные настройки проекта
 # ---------------------------
-split = "dev"               # "train", "dev", "test"
+split = "train"               # "train", "dev", "test"
 base_dir = "E:\\MELD"         # Корневая директория, где лежат данные
 
 # Пути к данным (используются в config_loader.py)
@@ -28,7 +28,7 @@ shuffle = true
 # ---------------------------
 [audio]
 sample_rate = 16000           # Целевая частота дискретизации
-wav_length = 2                # Целевая длина (в секундах) для аудио
+wav_length = 4                # Целевая длина (в секундах) для аудио
 
 [audio_saving]
 save_processed_audio = false
@@ -58,3 +58,4 @@ use_whisper_for_nontrain_if_no_text = true
 # Если указать random_seed, мы фиксируем seed => воспроизводимые результаты
 random_seed = 42 #  <=0 - рандомная выборка будет каждый раз
 subset_size = 50 # Если subset_size = 0 или subset_size не указан, значит используем весь датасет без ограничений.
+merge_probability = 0.3 # процент семплирования коротких файлов.

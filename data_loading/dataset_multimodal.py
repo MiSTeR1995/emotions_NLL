@@ -1,5 +1,3 @@
-# data_loading/dataset_multimodal.py
-
 import os
 import random
 import logging
@@ -17,7 +15,8 @@ class DatasetMultiModal(Dataset):
     При каждом вызове __getitem__:
       - Загружает WAV по video_name из CSV.
       - Для обучающей выборки (split="train"):
-            Если аудио короче target_samples, выполняется цепочка склейки:
+            Если аудио короче target_samples, проверяем, выбрали ли мы этот файл для склейки
+            (по merge_probability). Если да – выполняется "chain merge":
             выбирается один или несколько дополнительных файлов того же класса, даже если один кандидат длиннее,
             и итоговое аудио затем обрезается до точной длины.
       - Если итоговое аудио всё ещё меньше target_samples, выполняется паддинг нулями.
@@ -37,11 +36,11 @@ class DatasetMultiModal(Dataset):
         sample_rate=16000,
         wav_length=2,
         whisper_model="tiny",
-        max_text_tokens=15,  # данный параметр больше не используется
         text_column="text",
         use_whisper_for_nontrain_if_no_text=True,
         whisper_device="cuda",
-        subset_size=0
+        subset_size=0,
+        merge_probability=1.0  # <-- Новый параметр: доля от ОБЩЕГО числа файлов
     ):
         """
         :param csv_path: Путь к CSV-файлу (с колонками video_name, emotion_columns, возможно text).
@@ -56,6 +55,7 @@ class DatasetMultiModal(Dataset):
         :param use_whisper_for_nontrain_if_no_text: Если True, для dev/test при отсутствии CSV-текста вызывается Whisper.
         :param whisper_device: "cuda" или "cpu" – устройство для модели Whisper.
         :param subset_size: Если > 0, используется только первые N записей из CSV (для отладки).
+        :param merge_probability: Процент (0..1) от всего числа файлов, которые будут склеиваться, если они короче.
         """
         super().__init__()
         self.split = split
@@ -66,6 +66,7 @@ class DatasetMultiModal(Dataset):
         self.text_column = text_column
         self.use_whisper_for_nontrain_if_no_text = use_whisper_for_nontrain_if_no_text
         self.whisper_device = whisper_device
+        self.merge_probability = merge_probability
 
         # Загружаем CSV
         if not os.path.exists(csv_path):
@@ -107,23 +108,64 @@ class DatasetMultiModal(Dataset):
                 "csv_text": csv_text
             })
 
-        # Создаем карту для поиска файлов для merge
+        # Создаем карту для поиска файлов по эмоции
         self.audio_class_map = {entry["audio_path"]: entry["label"] for entry in self.rows}
 
         logging.info("📊 Анализ распределения файлов по эмоциям:")
         emotion_counts = {emotion: 0 for emotion in set(self.audio_class_map.values())}
-
         for path, emotion in self.audio_class_map.items():
             emotion_counts[emotion] += 1
-
         for emotion, count in emotion_counts.items():
             logging.info(f"🎭 Эмоция '{emotion}': {count} файлов.")
 
         logging.info(f"[DatasetMultiModal] Сплит={split}, всего строк: {len(self.rows)}")
 
-        # Загружаем Whisper-модель один раз на указанное устройство
+        # === Процентное семплирование ===
+        total_files = len(self.rows)
+        num_to_merge = int(total_files * self.merge_probability)
+
+        # Определим, какие файлы "короткие" (могут нуждаться в склейке)
+        self.mergable_files = []
+        self.mergable_files = [
+            row["audio_path"]  # вместо целого dict берём строку
+            for row in self.rows
+            if self._is_too_short(row["audio_path"])
+        ]
+        short_count = len(self.mergable_files)
+
+        # Если коротких файлов больше нужного числа, выберем случайные. Иначе все короткие.
+        if short_count > num_to_merge:
+            # Выбираем случайно нужное количество
+            self.files_to_merge = set(random.sample(self.mergable_files, num_to_merge))
+        else:
+            # Склеим все короткие
+            self.files_to_merge = set(self.mergable_files)
+
+        logging.info(f"🔗 Всего файлов: {total_files}, нужно склеить: {num_to_merge} ({self.merge_probability*100:.0f}%)")
+        logging.info(f"🔗 Коротких файлов: {short_count}, выбрано для склейки: {len(self.files_to_merge)}")
+
+        # Инициализируем Whisper-модель один раз
         logging.info(f"Инициализация Whisper: модель={whisper_model}, устройство={whisper_device}")
         self.whisper_model = whisper.load_model(whisper_model, device=whisper_device)
+
+    def _is_too_short(self, audio_path):
+        """
+        Проверяем, является ли файл короче target_samples.
+        """
+        try:
+            info = torchaudio.info(audio_path)
+            length = info.num_frames
+            sr_ = info.sample_rate
+            # переводим длину в "эквивалент self.sample_rate"
+            if sr_ != self.sample_rate:
+                ratio = sr_ / self.sample_rate
+                eq_len = int(length / ratio)
+            else:
+                eq_len = length
+            return eq_len < self.target_samples
+        except Exception as e:
+            logging.warning(f"Ошибка _is_too_short({audio_path}): {e}")
+            return False
 
     def __len__(self):
         return len(self.rows)
@@ -149,10 +191,12 @@ class DatasetMultiModal(Dataset):
         logging.debug(f"Исходная длина {os.path.basename(audio_path)}: {orig_len/sr:.2f} сек")
 
         was_merged = False
-        merged_texts = [csv_text]  # Хранит текст первого аудио + тексты добавленных
+        merged_texts = [csv_text]  # Тексты исходного файла + добавленных
 
-        # Шаг 2. Для train, если аудио короче target_samples, пытаемся добавить дополнительные файлы (chain merge)
-        if self.split == "train" and orig_len < self.target_samples:
+        # Шаг 2. Для train, если аудио короче target_samples, проверяем:
+        #        попал ли данный row в files_to_merge?
+        if self.split == "train" and row["audio_path"] in self.files_to_merge:
+            # chain merge
             current_length = orig_len
             used_candidates = set()
 
@@ -170,33 +214,32 @@ class DatasetMultiModal(Dataset):
                 current_length = waveform.shape[1]
                 was_merged = True
 
-                # Получаем текст второго файла (если он есть в CSV)
-                add_csv_text = next((row["csv_text"] for row in self.rows if row["audio_path"] == candidate), "")
+                # Получаем текст второго файла (если есть в CSV)
+                add_csv_text = next((r["csv_text"] for r in self.rows if r["audio_path"] == candidate), "")
                 merged_texts.append(add_csv_text)
 
                 logging.debug(f"📜 Текст первого файла: {csv_text}")
                 logging.debug(f"📜 Текст добавленного файла: {add_csv_text}")
+        else:
+            # Если файл не в списке "должны склеить" или сплит не train, пропускаем chain-merge
+            logging.debug("Файл не выбран для склейки (или не train), пропускаем chain merge.")
 
-        # Шаг 3. Если итоговая длина меньше target_samples, выполняем паддинг нулями
+        # Шаг 3. Если итоговая длина меньше target_samples, паддинг нулями
         curr_len = waveform.shape[1]
         if curr_len < self.target_samples:
             pad_size = self.target_samples - curr_len
             logging.debug(f"Паддинг {os.path.basename(audio_path)}: +{pad_size} сэмплов")
             waveform = torch.nn.functional.pad(waveform, (0, pad_size))
 
-        # Шаг 4. Обрезаем итоговое аудио до target_samples (даже если получилось больше)
+        # Шаг 4. Обрезаем аудио до target_samples (если вышло больше)
         waveform = waveform[:, :self.target_samples]
         logging.debug(f"Финальная длина {os.path.basename(audio_path)}: {waveform.shape[1]/sr:.2f} сек; was_merged={was_merged}")
 
-        # Шаг 5. Получаем текст:
-        # Если аудио было merged, вызываем Whisper;
-        # Если не было и CSV-текст непустой, используем CSV-текст;
-        # Иначе, для train (или по условию для dev/test) вызываем Whisper.
+        # Шаг 5. Получаем текст
         if was_merged:
             logging.debug("📝 Текст: аудио было merged – вызываем Whisper.")
             text_final = self.run_whisper(waveform)
             logging.debug(f"🆕 Whisper предсказал: {text_final}")
-
         else:
             if csv_text.strip():
                 logging.debug("Текст: используем CSV-текст (не пуст).")
@@ -257,11 +300,8 @@ class DatasetMultiModal(Dataset):
         if not valid:
             return None  # Нет подходящих файлов
 
-        # Перемешиваем кандидатов (если seed зафиксирован, порядок будет одинаковым)
         random.shuffle(valid)
-
         return random.choice(valid)[1]
-
 
     def run_whisper(self, waveform):
         """

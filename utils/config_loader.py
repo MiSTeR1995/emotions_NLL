@@ -15,7 +15,7 @@ class ConfigLoader:
     - Параметры dataloader (batch_size, num_workers, shuffle)
     - Параметры аудио (sample_rate, wav_length)
     - Whisper-настройки (whisper_model, max_tokens, device и т.д.)
-    - Параметры для тренировки (random_seed)
+    - Параметры для тренировки (random_seed, subset_size, merge_probability)
     """
 
     def __init__(self, config_path="config.toml"):
@@ -47,11 +47,13 @@ class ConfigLoader:
         # Эмоции, модальности
         # ---------------------------
         self.modalities = self.config.get("modalities", ["audio"])
-        self.emotion_columns = self.config.get("emotion_columns",
-                                               ["neutral","happy","sad","anger","surprise","disgust","fear"])
+        self.emotion_columns = self.config.get(
+            "emotion_columns",
+            ["neutral","happy","sad","anger","surprise","disgust","fear"]
+        )
 
         # ---------------------------
-        # Параметры DataLoader
+        # DataLoader
         # ---------------------------
         dataloader_cfg = self.config.get("dataloader", {})
         self.batch_size = dataloader_cfg.get("batch_size", 1)
@@ -82,6 +84,8 @@ class ConfigLoader:
         train_cfg = self.config.get("train", {})
         self.random_seed = train_cfg.get("random_seed", None)
         self.subset_size = train_cfg.get("subset_size", 0)
+        # Новый параметр для процентного семплирования
+        self.merge_probability = train_cfg.get("merge_probability", 0.5)
 
         if __name__ == "__main__":
             self.log_config()
@@ -101,6 +105,7 @@ class ConfigLoader:
         logging.info(f"use_whisper_for_nontrain_if_no_text={self.use_whisper_for_nontrain_if_no_text}")
         logging.info(f"DataLoader: batch_size={self.batch_size}, num_workers={self.num_workers}, shuffle={self.shuffle}")
         logging.info(f"Random Seed={self.random_seed}")
+        logging.info(f"Merge Probability={self.merge_probability}")
 
     def show_config(self):
         """

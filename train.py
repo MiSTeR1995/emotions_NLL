@@ -63,11 +63,11 @@ def main():
         sample_rate=config.sample_rate,
         wav_length=config.wav_length,
         whisper_model=config.whisper_model,
-        max_text_tokens=config.max_text_tokens,  # не используется, можно оставить для совместимости
         text_column=config.text_column,
         use_whisper_for_nontrain_if_no_text=config.use_whisper_for_nontrain_if_no_text,
         whisper_device=config.whisper_device,
-        subset_size=config.subset_size
+        subset_size=config.subset_size,
+        merge_probability=config.merge_probability  # <-- добавили
     )
 
     dataloader = DataLoader(
