@@ -202,7 +202,7 @@ class DatasetMultiModal(Dataset):
 
             while current_length < self.target_samples:
                 needed = self.target_samples - current_length
-                candidate = self.get_suitable_audio(label_name, exclude_path=audio_path, min_needed=needed)
+                candidate = self.get_suitable_audio(label_name, exclude_path=audio_path, min_needed=needed, top_k=10)
                 if candidate is None or candidate in used_candidates:
                     break
                 used_candidates.add(candidate)
@@ -276,32 +276,55 @@ class DatasetMultiModal(Dataset):
             logging.error(f"Ошибка загрузки {path}: {e}")
             return None, None
 
-    def get_suitable_audio(self, label_name, exclude_path, min_needed):
+    def get_suitable_audio(self, label_name, exclude_path, min_needed, top_k=5):
         """
-        Ищет аудиофайл с той же эмоцией, длина которого >= min_needed (в сэмплах).
+        Ищет аудиофайл с той же эмоцией.
+        1) Если есть файлы >= min_needed, выбираем случайно из них.
+        2) Если таких нет, берём топ-K самых длинных, потом из них берём случайный.
         """
-        candidates = [p for p, lbl in self.audio_class_map.items() if lbl == label_name and p != exclude_path]
-        logging.debug(f"🔍 Найдено {len(candidates)} кандидатов для класса '{label_name}'")
 
-        valid = []
+        candidates = [p for p, lbl in self.audio_class_map.items()
+                    if lbl == label_name and p != exclude_path]
+        logging.debug(f"🔍 Найдено {len(candidates)} кандидатов для эмоции '{label_name}'")
+
+        # Сохраним: (eq_len, path) для всех кандидатов
+        all_info = []
         for path in candidates:
             try:
                 info = torchaudio.info(path)
                 length = info.num_frames
                 sr_ = info.sample_rate
-                eq_len = int(length * (self.sample_rate / sr_)) if sr_ != self.sample_rate else length
-                if eq_len >= min_needed:
-                    valid.append((eq_len, path))
+                eq_len = int(length / (sr_ / self.sample_rate)) if sr_ != self.sample_rate else length
+                all_info.append((eq_len, path))
             except Exception as e:
                 logging.warning(f"⚠ Ошибка чтения {path}: {e}")
 
-        logging.debug(f"✅ Подходящих файлов: {len(valid)} (из {len(candidates)})")
+        # 1) Фильтруем только >= min_needed
+        valid = [(l, p) for l, p in all_info if l >= min_needed]
+        logging.debug(f"✅ Подходящих (>= {min_needed}): {len(valid)} (из {len(all_info)})")
 
-        if not valid:
-            return None  # Нет подходящих файлов
+        if valid:
+            # Если есть идеальные — берём случайно из них
+            random.shuffle(valid)
+            chosen = random.choice(valid)[1]
+            return chosen
+        else:
+            # 2) Если идеальных нет — берём топ-K по длине
+            # Сортируем по убыванию длины, и обрезаем до K
+            sorted_by_len = sorted(all_info, key=lambda x: x[0], reverse=True)
+            top_k_list = sorted_by_len[:top_k]
+            # logging.info(f"Нет кандидатов с длиной >= {min_needed}. Топ-{top_k} кандидатов (с длинами): {top_k_list}")
 
-        random.shuffle(valid)
-        return random.choice(valid)[1]
+            if not top_k_list:
+                logging.debug("Нет доступных кандидатов вообще.")
+                return None  # вообще нет кандидатов
+
+            # Из топ-K берём случайно
+            random.shuffle(top_k_list)
+            chosen = top_k_list[0][1]
+            logging.info(f"Из топ-{top_k} выбран кандидат: {chosen}")
+            return chosen
+
 
     def run_whisper(self, waveform):
         """
