@@ -7,21 +7,9 @@ import logging
 class ConfigLoader:
     """
     Класс для загрузки и обработки конфигурации из `config.toml`.
-
-    Поддерживает следующие основные поля:
-    - split: "train", "dev", "test"
-    - base_dir, csv_path, wav_dir, video_dir
-    - emotion_columns, modalities
-    - Параметры dataloader (batch_size, num_workers, shuffle)
-    - Параметры аудио (sample_rate, wav_length)
-    - Whisper-настройки (whisper_model, max_tokens, device и т.д.)
-    - Параметры для тренировки (random_seed, subset_size, merge_probability)
     """
 
     def __init__(self, config_path="config.toml"):
-        """
-        Инициализирует загрузку из TOML-файла.
-        """
         if not os.path.exists(config_path):
             raise FileNotFoundError(f"Файл конфигурации `{config_path}` не найден!")
 
@@ -47,10 +35,8 @@ class ConfigLoader:
         # Эмоции, модальности
         # ---------------------------
         self.modalities = self.config.get("modalities", ["audio"])
-        self.emotion_columns = self.config.get(
-            "emotion_columns",
-            ["neutral","happy","sad","anger","surprise","disgust","fear"]
-        )
+        self.emotion_columns = self.config.get("emotion_columns",
+                                               ["neutral","happy","sad","anger","surprise","disgust","fear"])
 
         # ---------------------------
         # DataLoader
@@ -65,7 +51,7 @@ class ConfigLoader:
         # ---------------------------
         audio_cfg = self.config.get("audio", {})
         self.sample_rate = audio_cfg.get("sample_rate", 16000)
-        self.wav_length = audio_cfg.get("wav_length", 2)  # в секундах
+        self.wav_length = audio_cfg.get("wav_length", 2)
 
         # ---------------------------
         # Whisper / Текст
@@ -84,16 +70,31 @@ class ConfigLoader:
         train_cfg = self.config.get("train", {})
         self.random_seed = train_cfg.get("random_seed", None)
         self.subset_size = train_cfg.get("subset_size", 0)
-        # Новый параметр для процентного семплирования
         self.merge_probability = train_cfg.get("merge_probability", 0.5)
+
+        # ---------------------------
+        # Embeddings
+        # ---------------------------
+        emb_cfg = self.config.get("embeddings", {})
+        self.audio_model_name = emb_cfg.get("audio_model", "amiriparian/ExHuBERT")
+        self.text_model_name  = emb_cfg.get("text_model",  "jinaai/jina-embeddings-v3")
+
+        self.audio_embedding_dim = emb_cfg.get("audio_embedding_dim", 1024)
+        self.text_embedding_dim  = emb_cfg.get("text_embedding_dim",  1024)
+
+        self.audio_pooling = emb_cfg.get("audio_pooling", None)
+        self.text_pooling  = emb_cfg.get("text_pooling",  None)
+
+        self.max_tokens = emb_cfg.get("max_tokens", 256)
+        self.max_audio_frames = emb_cfg.get("max_audio_frames", 16000)
+
+        self.emb_device = emb_cfg.get("device", "cuda")
+        self.emb_normalize = emb_cfg.get("normalize_output", True)
 
         if __name__ == "__main__":
             self.log_config()
 
     def log_config(self):
-        """
-        Выводит конфигурацию в лог (уровень INFO).
-        """
         logging.info("=== CONFIGURATION ===")
         logging.info(f"Split: {self.split}")
         logging.info(f"Base Dir: {self.base_dir}")
@@ -107,8 +108,13 @@ class ConfigLoader:
         logging.info(f"Random Seed={self.random_seed}")
         logging.info(f"Merge Probability={self.merge_probability}")
 
+        # Логируем embeddings
+        logging.info("--- Embeddings Config ---")
+        logging.info(f"Audio Model: {self.audio_model_name}, Text Model: {self.text_model_name}")
+        logging.info(f"Audio dim={self.audio_embedding_dim}, Text dim={self.text_embedding_dim}")
+        logging.info(f"Audio pooling={self.audio_pooling}, Text pooling={self.text_pooling}")
+        logging.info(f"Max tokens={self.max_tokens}, Max audio frames={self.max_audio_frames}")
+        logging.info(f"Emb device={self.emb_device}, Normalize={self.emb_normalize}")
+
     def show_config(self):
-        """
-        Вызывается вручную, чтобы логировать текущие настройки.
-        """
         self.log_config()

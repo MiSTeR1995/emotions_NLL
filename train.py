@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 from utils.logger_setup import setup_logger
 from utils.config_loader import ConfigLoader
 from data_loading.dataset_multimodal import DatasetMultiModal
+from data_loading.feature_extractor import AudioEmbeddingExtractor, TextEmbeddingExtractor
 
 def custom_collate_fn(batch):
     """
@@ -67,7 +68,7 @@ def main():
         use_whisper_for_nontrain_if_no_text=config.use_whisper_for_nontrain_if_no_text,
         whisper_device=config.whisper_device,
         subset_size=config.subset_size,
-        merge_probability=config.merge_probability  # <-- добавили
+        merge_probability=config.merge_probability
     )
 
     dataloader = DataLoader(
@@ -78,23 +79,39 @@ def main():
         collate_fn=custom_collate_fn
     )
 
-    # Пример цикла тренировки (2 эпохи)
+    # === Создаём экстракторы эмбеддингов ===
+    audio_extractor = AudioEmbeddingExtractor(config)
+    text_extractor  = TextEmbeddingExtractor(config)
+
+# Упрощённый цикл "обучения"
     for epoch in range(2):
         logging.info(f"=== Эпоха {epoch} ===")
+
         for i, batch in enumerate(dataloader):
             if batch is None:
                 continue
 
-            audio = batch["audio"]   # (B, 1, target_samples)
-            labels = batch["label"]  # (B, num_emotions)
-            texts = batch["text"]    # список строк
+            audio = batch["audio"]   # shape: (B, 1, samples)
+            labels = batch["label"]  # shape: (B, num_emotions)
+            texts = batch["text"]    # список строк длины B
 
             logging.info(f"[Epoch={epoch} Batch={i}] audio_shape={audio.shape}, label_shape={labels.shape}")
-            if texts:
+
+            # Извлечём аудио-эмбеддинги
+            audio_emb = audio_extractor.extract(audio, sample_rate=config.sample_rate)
+            logging.info(f"Audio emb shape: {audio_emb.shape}")
+
+            # Извлечём текст-эмбеддинги
+            text_emb = text_extractor.extract(texts)
+            logging.info(f"Text emb shape: {text_emb.shape}")    # (B, text_embedding_dim)
+
+            # Для демонстрации выведем лишь один пример:
+            if i == 0:
                 logging.info(f"Пример текста[0]: {texts[0]}")
+                logging.info(f"Пример Audio Emb[0]: {audio_emb[0][:5]}")  # первые 5 чисел
+                logging.info(f"Пример Text  Emb[0]: {text_emb[0][:5]}")
 
-            # Здесь должна быть логика обучения модели
-
+        # Конец эпохи
     logging.info("✅ Тренировка завершена.")
 
 if __name__ == "__main__":

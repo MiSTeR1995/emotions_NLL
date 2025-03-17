@@ -59,3 +59,20 @@ use_whisper_for_nontrain_if_no_text = true
 random_seed = 42 #  <=0 - рандомная выборка будет каждый раз
 subset_size = 50 # Если subset_size = 0 или subset_size не указан, значит используем весь датасет без ограничений.
 merge_probability = 0.2 # процент семплирования коротких файлов.
+
+
+[embeddings]
+audio_model = "amiriparian/ExHuBERT"  # Hugging Face имя модели для аудио
+text_model = "jinaai/jina-embeddings-v3"  # Hugging Face имя модели для текста
+
+audio_embedding_dim = 1024  # размерность аудио-эмбеддинга
+text_embedding_dim = 1024   # размерность текст-эмбеддинга
+
+# audio_pooling = "mean"        # "mean", "cls", "max", "min", "last", "attention"
+# text_pooling = "cls"          # "mean", "cls", "max", "min", "last", "sum", "attention"
+
+max_tokens = 44         # ограничение на длину текста (токенов) при токенизации
+max_audio_frames = 64000 # ограничение на длину аудио (семплов) до усечения
+
+device = "cuda"          # "cuda" или "cpu", куда грузить модель
+normalize_output = true  # нормализовать ли вектор L2-нормой
