@@ -18,18 +18,22 @@ class ConfigLoader:
         # ---------------------------
         # Общие параметры
         # ---------------------------
-        self.split = self.config.get("split", "train")
+        self.split = self.config.get("split")
         self.base_dir = self.config.get("base_dir", "E:/MELD")
 
         # ---------------------------
         # Пути к данным
         # ---------------------------
-        self.csv_path = self.config.get("csv_path", "{base_dir}/MELD.Raw/meld_{split}_labels.csv") \
-            .format(base_dir=self.base_dir, split=self.split)
-        self.wav_dir = self.config.get("wav_dir", "{base_dir}/wavs/{split}") \
-            .format(base_dir=self.base_dir, split=self.split)
-        self.video_dir = self.config.get("video_dir", "{base_dir}/MELD.Raw/{split}_splits") \
-            .format(base_dir=self.base_dir, split=self.split)
+        # self.csv_path = self.config.get("csv_path", "{base_dir}/MELD.Raw/meld_{split}_labels.csv") \
+        #     .format(base_dir=self.base_dir, split=self.split)
+        # self.wav_dir = self.config.get("wav_dir", "{base_dir}/wavs/{split}") \
+        #     .format(base_dir=self.base_dir, split=self.split)
+        # self.video_dir = self.config.get("video_dir", "{base_dir}/MELD.Raw/{split}_splits") \
+        #     .format(base_dir=self.base_dir, split=self.split)
+
+        self.csv_path = self.config.get("csv_path", "{base_dir}/MELD.Raw/meld_{split}_labels.csv")
+        self.wav_dir = self.config.get("wav_dir", "{base_dir}/wavs/{split}")
+        self.video_dir = self.config.get("video_dir", "{base_dir}/MELD.Raw/{split}_splits")
 
         # ---------------------------
         # Эмоции, модальности

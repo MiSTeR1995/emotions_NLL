@@ -187,7 +187,7 @@ class TextEmbeddingExtractor:
 
         inputs = self.tokenizer(
             text_list,
-            padding=True,
+            padding="max_length",
             truncation=True,
             max_length=self.max_tokens,
             return_tensors="pt"

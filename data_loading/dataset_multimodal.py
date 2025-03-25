@@ -32,7 +32,7 @@ class DatasetMultiModal(Dataset):
         csv_path,
         wav_dir,
         emotion_columns,
-        split="train",
+        split,
         sample_rate=16000,
         wav_length=2,
         whisper_model="tiny",
